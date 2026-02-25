@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PromptRefiner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-primary: #0a0a0f;
+    --bg-secondary: #12121a;
+    --bg-tertiary: #1a1a26;
+    --bg-hover: #22222f;
+    --border: #2a2a3a;
+    --border-active: #4a4a6a;
+    --text-primary: #e8e8f0;
+    --text-secondary: #8888a0;
+    --text-dim: #555568;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --accent-dim: rgba(99,102,241,0.15);
+    --green: #34d399;
+    --green-dim: rgba(52,211,153,0.12);
+    --orange: #f59e0b;
+    --orange-dim: rgba(245,158,11,0.12);
+    --red: #ef4444;
+    --red-dim: rgba(239,68,68,0.1);
+    --radius: 8px;
+    --radius-lg: 12px;
+    --shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* --- Subtle grid bg --- */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 60px 60px;
+    opacity: 0.08;
+  }
+
+  .app { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+  /* --- Header --- */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 0 24px; border-bottom: 1px solid var(--border); margin-bottom: 24px;
+  }
+  .header h1 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 20px; font-weight: 700; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, var(--accent), var(--green));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .header .status {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--text-secondary);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--red); transition: background 0.3s;
+  }
+  .status-dot.connected { background: var(--green); }
+
+  /* --- Layout --- */
+  .layout { display: grid; grid-template-columns: 300px 1fr; gap: 24px; }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  /* --- Settings Panel --- */
+  .panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    height: fit-content;
+    position: sticky; top: 24px;
+  }
+  .panel-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 1.5px;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+  }
+  .panel-section { margin-bottom: 20px; }
+  .panel-section:last-child { margin-bottom: 0; }
+
+  /* Model selector */
+  .model-select {
+    width: 100%; padding: 8px 12px;
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--text-primary);
+    font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    cursor: pointer; outline: none;
+    transition: border-color 0.2s;
+  }
+  .model-select:focus { border-color: var(--accent); }
+
+  /* Mode cards */
+  .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .mode-card {
+    padding: 8px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer; transition: all 0.15s;
+    text-align: center;
+  }
+  .mode-card:hover { border-color: var(--border-active); background: var(--bg-hover); }
+  .mode-card.active { border-color: var(--accent); background: var(--accent-dim); }
+  .mode-card .icon { font-size: 16px; margin-bottom: 2px; }
+  .mode-card .name { font-size: 11px; font-weight: 600; }
+
+  /* Toggle switches */
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-label {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 500; cursor: pointer;
+  }
+  .toggle-label .t-icon { font-size: 14px; }
+  .toggle-switch {
+    width: 36px; height: 20px; background: var(--bg-tertiary);
+    border: 1px solid var(--border); border-radius: 10px;
+    position: relative; cursor: pointer; transition: all 0.2s;
+    flex-shrink: 0;
+  }
+  .toggle-switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--text-dim); transition: all 0.2s;
+  }
+  .toggle-switch.active { background: var(--accent-dim); border-color: var(--accent); }
+  .toggle-switch.active::after { left: 18px; background: var(--accent); }
+
+  /* Persona selector */
+  .persona-select {
+    width: 100%; padding: 8px 12px;
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--text-primary);
+    font-size: 13px; cursor: pointer; outline: none;
+    transition: border-color 0.2s;
+  }
+  .persona-select:focus { border-color: var(--accent); }
+
+  /* Temperature slider */
+  .temp-row { display: flex; align-items: center; gap: 10px; }
+  .temp-slider {
+    flex: 1; -webkit-appearance: none; height: 4px;
+    background: var(--bg-tertiary); border-radius: 2px; outline: none;
+  }
+  .temp-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--accent); cursor: pointer;
+  }
+  .temp-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; color: var(--text-secondary); min-width: 30px;
+  }
+
+  /* --- Main Content --- */
+  .main { display: flex; flex-direction: column; gap: 20px; }
+
+  /* Input area */
+  .input-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .input-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .input-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 1.5px;
+    color: var(--text-dim);
+  }
+  .word-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--text-dim);
+  }
+  .prompt-input {
+    width: 100%; min-height: 160px; padding: 16px;
+    background: transparent; border: none; outline: none;
+    color: var(--text-primary); font-family: 'DM Sans', sans-serif;
+    font-size: 14px; line-height: 1.7; resize: vertical;
+  }
+  .prompt-input::placeholder { color: var(--text-dim); }
+
+  /* Custom instructions */
+  .custom-input {
+    width: 100%; min-height: 60px; padding: 12px;
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    border-radius: var(--radius); outline: none;
+    color: var(--text-primary); font-size: 12px;
+    font-family: 'DM Sans', sans-serif;
+    line-height: 1.5; resize: vertical;
+    transition: border-color 0.2s;
+  }
+  .custom-input:focus { border-color: var(--accent); }
+  .custom-input::placeholder { color: var(--text-dim); }
+
+  /* Action buttons */
+  .actions { display: flex; gap: 10px; }
+  .btn {
+    padding: 10px 20px; border: none; border-radius: var(--radius);
+    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 6px;
+  }
+  .btn-primary {
+    background: var(--accent); color: white;
+    box-shadow: 0 2px 12px rgba(99,102,241,0.3);
+  }
+  .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .btn-secondary {
+    background: var(--bg-tertiary); color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { border-color: var(--border-active); color: var(--text-primary); }
+
+  /* Output area */
+  .output-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .output-tabs {
+    display: flex; border-bottom: 1px solid var(--border);
+  }
+  .output-tab {
+    padding: 10px 16px; font-size: 12px; font-weight: 600;
+    color: var(--text-dim); cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .output-tab:hover { color: var(--text-secondary); }
+  .output-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .output-content {
+    padding: 16px;
+    min-height: 200px;
+    font-size: 14px; line-height: 1.7;
+    white-space: pre-wrap;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .output-content.mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; line-height: 1.6;
+    color: var(--text-secondary);
+  }
+  .output-content .placeholder {
+    color: var(--text-dim); font-style: italic;
+  }
+
+  /* Metrics bar */
+  .metrics-bar {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px; padding: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .metric-card {
+    background: var(--bg-tertiary); border-radius: var(--radius);
+    padding: 10px 12px;
+  }
+  .metric-label {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 4px;
+  }
+  .metric-value {
+    font-size: 18px; font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .metric-value.good { color: var(--green); }
+  .metric-value.medium { color: var(--orange); }
+  .metric-value.low { color: var(--red); }
+
+  /* Copy button */
+  .copy-btn {
+    position: absolute; top: 10px; right: 10px;
+    padding: 4px 10px; font-size: 11px;
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--text-secondary);
+    cursor: pointer; font-family: 'JetBrains Mono', monospace;
+    transition: all 0.15s;
+  }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .copy-btn.copied { border-color: var(--green); color: var(--green); }
+
+  /* Loading spinner */
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid transparent; border-top-color: currentColor;
+    border-radius: 50%; animation: spin 0.6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Error */
+  .error-msg {
+    padding: 12px 16px; background: var(--red-dim);
+    border: 1px solid rgba(239,68,68,0.3);
+    border-radius: var(--radius); color: #fca5a5;
+    font-size: 13px; margin-bottom: 10px;
+  }
+
+  /* fade-in animation */
+  .fade-in { animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-active); }
+
+  /* tooltip */
+  [data-tip] { position: relative; }
+  [data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute; bottom: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 8px; background: var(--bg-hover);
+    border: 1px solid var(--border); border-radius: 4px;
+    font-size: 11px; color: var(--text-secondary);
+    white-space: nowrap; z-index: 10;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Header -->
+  <div class="header">
+    <h1>⚡ PromptRefiner</h1>
+    <div class="status">
+      <div id="statusDot" class="status-dot"></div>
+      <span id="statusText">Checking Ollama...</span>
+      <span>|</span>
+      <select id="modelSelect" class="model-select" style="width:auto; border:none; background:transparent; color:var(--text-secondary); font-size:12px;">
+        <option value="">No models</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- Settings Panel -->
+    <div class="panel">
+      <div class="panel-section">
+        <div class="panel-title">Refinement Mode</div>
+        <div class="mode-grid" id="modeGrid"></div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-title">Persona Lens</div>
+        <select id="personaSelect" class="persona-select"></select>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-title">Modifiers</div>
+        <div id="toggleList"></div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-title">Temperature</div>
+        <div class="temp-row">
+          <input type="range" id="tempSlider" class="temp-slider" min="0" max="1.5" step="0.1" value="0.7">
+          <span id="tempValue" class="temp-value">0.7</span>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-title">Custom Instructions</div>
+        <textarea id="customInstructions" class="custom-input" placeholder="Additional context or constraints..."></textarea>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main">
+      <!-- Input -->
+      <div class="input-section">
+        <div class="input-header">
+          <span class="input-label">Original Prompt</span>
+          <span id="inputWordCount" class="word-count">0 words</span>
+        </div>
+        <textarea id="promptInput" class="prompt-input" placeholder="Paste your prompt here. It can be rough, incomplete, or just an idea. The refiner will transform it."></textarea>
+      </div>
+
+      <!-- Actions -->
+      <div class="actions">
+        <button id="refineBtn" class="btn btn-primary" onclick="refine()">
+          Refine ⚡
+        </button>
+        <button id="chainBtn" class="btn btn-secondary" onclick="refineChain()">
+          Double Refine 🔗
+        </button>
+        <button class="btn btn-secondary" onclick="clearAll()">
+          Clear
+        </button>
+      </div>
+
+      <!-- Error -->
+      <div id="errorBox" class="error-msg" style="display:none;"></div>
+
+      <!-- Output -->
+      <div id="outputSection" class="output-section" style="display:none;">
+        <div class="output-tabs">
+          <div class="output-tab active" data-tab="refined" onclick="switchTab(this)">Refined</div>
+          <div class="output-tab" data-tab="changelog" onclick="switchTab(this)">Changelog</div>
+          <div class="output-tab" data-tab="system" onclick="switchTab(this)">System Prompt</div>
+          <div class="output-tab" data-tab="raw" onclick="switchTab(this)">Raw</div>
+        </div>
+        <div style="position:relative;">
+          <button class="copy-btn" onclick="copyOutput(this)">Copy</button>
+          <div id="outputRefined" class="output-content tab-content"></div>
+          <div id="outputChangelog" class="output-content tab-content" style="display:none;"></div>
+          <div id="outputSystem" class="output-content mono tab-content" style="display:none;"></div>
+          <div id="outputRaw" class="output-content mono tab-content" style="display:none;"></div>
+        </div>
+        <div id="metricsBar" class="metrics-bar"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';  // Same origin
+let config = null;
+let activeMode = 'professional';
+let activeToggles = new Set();
+
+// --- Init ---
+async function init() {
+  try {
+    // Load settings
+    const settingsResp = await fetch(`${API}/api/settings`);
+    config = await settingsResp.json();
+    renderModes();
+    renderPersonas();
+    renderToggles();
+
+    // Load models
+    const modelsResp = await fetch(`${API}/api/models`);
+    const modelsData = await modelsResp.json();
+    const sel = document.getElementById('modelSelect');
+    sel.innerHTML = '';
+    modelsData.models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = m;
+      sel.appendChild(opt);
+    });
+    // Default to a good model if available
+    const preferred = ['llama3.1:8b', 'llama3:8b', 'mistral', 'qwen2.5:14b', 'gemma2:9b'];
+    for (const p of preferred) {
+      if (modelsData.models.includes(p)) { sel.value = p; break; }
+    }
+    if (!sel.value && modelsData.models.length > 0) sel.value = modelsData.models[0];
+
+    document.getElementById('statusDot').classList.add('connected');
+    document.getElementById('statusText').textContent = `Ollama · ${modelsData.models.length} models`;
+  } catch (e) {
+    document.getElementById('statusText').textContent = 'Ollama offline';
+    showError('Cannot connect to backend. Make sure the server is running: uvicorn backend.server:app --reload --port 8000');
+  }
+
+  // Word count
+  document.getElementById('promptInput').addEventListener('input', updateWordCount);
+  document.getElementById('tempSlider').addEventListener('input', (e) => {
+    document.getElementById('tempValue').textContent = e.target.value;
+  });
+}
+
+function updateWordCount() {
+  const text = document.getElementById('promptInput').value.trim();
+  const count = text ? text.split(/\s+/).length : 0;
+  document.getElementById('inputWordCount').textContent = `${count} words`;
+}
+
+// --- Render Settings ---
+function renderModes() {
+  const grid = document.getElementById('modeGrid');
+  grid.innerHTML = '';
+  config.refinement_modes.forEach(mode => {
+    const card = document.createElement('div');
+    card.className = `mode-card${mode.id === activeMode ? ' active' : ''}`;
+    card.setAttribute('data-tip', mode.description);
+    card.innerHTML = `<div class="icon">${mode.icon}</div><div class="name">${mode.name}</div>`;
+    card.onclick = () => {
+      activeMode = mode.id;
+      grid.querySelectorAll('.mode-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+    };
+    grid.appendChild(card);
+  });
+}
+
+function renderPersonas() {
+  const sel = document.getElementById('personaSelect');
+  sel.innerHTML = '';
+  config.personas.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = `${p.icon} ${p.name}`;
+    sel.appendChild(opt);
+  });
+  sel.value = 'none';
+}
+
+function renderToggles() {
+  const list = document.getElementById('toggleList');
+  list.innerHTML = '';
+  config.toggles.forEach(t => {
+    const row = document.createElement('div');
+    row.className = 'toggle-row';
+    row.innerHTML = `
+      <label class="toggle-label" data-tip="${t.description}">
+        <span class="t-icon">${t.icon}</span>
+        <span>${t.name}</span>
+      </label>
+      <div class="toggle-switch" data-toggle="${t.id}"></div>
+    `;
+    const sw = row.querySelector('.toggle-switch');
+    sw.onclick = () => {
+      sw.classList.toggle('active');
+      if (sw.classList.contains('active')) {
+        activeToggles.add(t.id);
+      } else {
+        activeToggles.delete(t.id);
+      }
+    };
+    list.appendChild(row);
+  });
+}
+
+// --- API Calls ---
+function getRequestBody() {
+  return {
+    prompt: document.getElementById('promptInput').value,
+    mode: activeMode,
+    persona: document.getElementById('personaSelect').value,
+    toggles: [...activeToggles],
+    model: document.getElementById('modelSelect').value,
+    temperature: parseFloat(document.getElementById('tempSlider').value),
+    custom_instructions: document.getElementById('customInstructions').value,
+  };
+}
+
+async function refine() {
+  const body = getRequestBody();
+  if (!body.prompt.trim()) { showError('Enter a prompt first.'); return; }
+  if (!body.model) { showError('No model selected. Is Ollama running?'); return; }
+
+  hideError();
+  setLoading(true);
+
+  try {
+    const resp = await fetch(`${API}/api/refine`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.detail || 'Refinement failed');
+    }
+    const data = await resp.json();
+    showOutput(data);
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function refineChain() {
+  const body = getRequestBody();
+  if (!body.prompt.trim()) { showError('Enter a prompt first.'); return; }
+  if (!body.model) { showError('No model selected.'); return; }
+
+  hideError();
+  setLoading(true, 'Double refining...');
+
+  try {
+    const resp = await fetch(`${API}/api/refine/chain`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.detail || 'Chain refinement failed');
+    }
+    const data = await resp.json();
+    // Show pass 2 if available, else pass 1
+    const result = data.pass_2 ? {
+      ...data.pass_2,
+      composed_system_prompt: data.pass_1.composed_system_prompt,
+    } : data.pass_1;
+    showOutput(result, data.pass_2 ? '(2-pass)' : '(single pass, pass 2 failed)');
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+// --- Display ---
+function showOutput(data, suffix = '') {
+  const section = document.getElementById('outputSection');
+  section.style.display = '';
+  section.classList.add('fade-in');
+
+  document.getElementById('outputRefined').textContent = data.refined_prompt || data.raw_response || 'No output';
+  document.getElementById('outputChangelog').textContent = data.changelog || 'No changelog parsed.';
+  document.getElementById('outputSystem').textContent = data.composed_system_prompt || '';
+  document.getElementById('outputRaw').textContent = data.raw_response || '';
+
+  // Parse metrics
+  const metricsBar = document.getElementById('metricsBar');
+  metricsBar.innerHTML = '';
+
+  if (data.metrics) {
+    const lines = data.metrics.split('\n');
+    lines.forEach(line => {
+      const match = line.match(/^(.+?):\s*(.+)$/);
+      if (match) {
+        const label = match[1].trim();
+        const value = match[2].trim();
+        const numVal = parseInt(value);
+        let cls = '';
+        if (!isNaN(numVal) && numVal <= 10) {
+          cls = numVal >= 7 ? 'good' : numVal >= 4 ? 'medium' : 'low';
+        }
+        metricsBar.innerHTML += `
+          <div class="metric-card">
+            <div class="metric-label">${label}</div>
+            <div class="metric-value ${cls}">${value}</div>
+          </div>`;
+      }
+    });
+  }
+
+  // Add word counts
+  const origWords = document.getElementById('promptInput').value.trim().split(/\s+/).length;
+  const refinedWords = (data.refined_prompt || '').trim().split(/\s+/).length;
+  const ratio = origWords > 0 ? ((refinedWords / origWords) * 100).toFixed(0) : '—';
+
+  metricsBar.innerHTML = `
+    <div class="metric-card">
+      <div class="metric-label">Original</div>
+      <div class="metric-value">${origWords}w</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Refined</div>
+      <div class="metric-value">${refinedWords}w</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Ratio</div>
+      <div class="metric-value">${ratio}%</div>
+    </div>
+  ` + metricsBar.innerHTML;
+
+  // Switch to refined tab
+  switchTab(document.querySelector('[data-tab="refined"]'));
+}
+
+function switchTab(el) {
+  document.querySelectorAll('.output-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+  el.classList.add('active');
+  const tabName = el.dataset.tab;
+  const map = { refined: 'outputRefined', changelog: 'outputChangelog', system: 'outputSystem', raw: 'outputRaw' };
+  document.getElementById(map[tabName]).style.display = '';
+}
+
+function copyOutput(btn) {
+  const activeContent = document.querySelector('.tab-content:not([style*="display: none"])');
+  if (activeContent) {
+    navigator.clipboard.writeText(activeContent.textContent).then(() => {
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+    });
+  }
+}
+
+function setLoading(loading, text = 'Refining...') {
+  const btn = document.getElementById('refineBtn');
+  const chainBtn = document.getElementById('chainBtn');
+  if (loading) {
+    btn.disabled = true;
+    chainBtn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> ${text}`;
+  } else {
+    btn.disabled = false;
+    chainBtn.disabled = false;
+    btn.innerHTML = 'Refine ⚡';
+  }
+}
+
+function showError(msg) {
+  const box = document.getElementById('errorBox');
+  box.textContent = msg;
+  box.style.display = '';
+}
+function hideError() {
+  document.getElementById('errorBox').style.display = 'none';
+}
+
+function clearAll() {
+  document.getElementById('promptInput').value = '';
+  document.getElementById('customInstructions').value = '';
+  document.getElementById('outputSection').style.display = 'none';
+  hideError();
+  updateWordCount();
+}
+
+// Boot
+init();
+</script>
+</body>
+</html>
